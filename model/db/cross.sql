@@ -1,0 +1,10 @@
+CREATE TABLE cross_name
+(
+	id INTEGER NOT NULL AUTO_INCREMENT,
+	name TEXT CHARACTER  set "utf8" NOT NULL,
+	del BOOL DEFAULT TRUE,
+	PRIMARY KEY (id)
+) 
+;
+
+

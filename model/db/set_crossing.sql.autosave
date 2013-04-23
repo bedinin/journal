@@ -1,0 +1,209 @@
+DELIMITER //
+create
+PROCEDURE set_crossing(	IN i_strafe TEXT,IN i_plint TEXT,IN i_pair TEXT,
+                        IN i_prev_strafe TEXT,IN i_prev_plint TEXT,IN i_prev_pair TEXT)
+        comment 'Кроссировка'
+BEGIN
+        DECLARE flag BOOL DEFAULT TRUE;
+        DECLARE constant_name, constant_name_prev TEXT;
+        DECLARE val TEXT;
+        DECLARE prev_flag_value,
+                        this_flag_value BOOL;
+
+#Проверка существования пар
+        SELECT COUNT(data.id) INTO this_count
+                        FROM data
+                        WHERE 	data.strafe=i_strafe AND
+                                data.plint = i_plint AND
+                                data.pair = i_pair;
+
+        SELECT COUNT(data.id) INTO prev_count
+                        FROM data
+                WHERE 	data.strafe=i_prev_strafe AND
+                                data.plint = i_prev_plint AND
+                                data.pair = i_prev_pair;
+
+        IF (prev_count = 0 OR this_count = 0) THEN
+        BEGIN
+                SET constant_name = "NOT_FOUND";
+                SET flag = FALSE;
+        END;
+        ELSE
+        BEGIN
+                IF flag THEN
+                        SET constant_name = "NORMAL";
+                END IF;
+        END;
+        END IF;
+
+ #Проверка существования кроссировки между парами
+
+        SELECT COUNT(data.id) INTO this_count
+                                FROM data
+                                WHERE 	data.strafe=i_strafe AND
+                                        data.plint = i_plint AND
+                                        data.pair = i_pair AND
+                                        data.prev_strafe=i_prev_strafe AND
+                                        data.prev_plint = i_prev_plint AND
+                                        data.prev_pair = i_prev_pair;
+    IF (this_count > 0) THEN
+    BEGIN
+        SET constant_name = "NOT_REPEAT_CROSSING";
+                SET flag = FALSE;
+    END;
+    ELSE
+        BEGIN
+                IF flag THEN
+                        SET constant_name = "NORMAL";
+                END IF;
+        END;
+        END IF;
+
+#Проверяем this.flag_value и prev.flag_value
+
+        SELECT data.flag_value INTO this_flag_value
+                        FROM data
+                        WHERE 	data.strafe=i_strafe AND
+                                data.plint = i_plint AND
+                                data.pair = i_pair;
+
+        SELECT data.flag_value INTO prev_flag_value
+                        FROM data
+                WHERE 	data.strafe=i_prev_strafe AND
+                                data.plint = i_prev_plint AND
+                                data.pair = i_prev_pair;
+
+ #Если 	prev_flag_value = this_flag_value = TRUE выводим ошибку
+        IF (prev_flag_value = TRUE AND this_flag_value = TRUE AND flag = TRUE) THEN
+        BEGIN
+                SET constant_name = "ERROR_FLAG_VALUE";
+                SET flag = FALSE;
+        END;
+        ELSE
+        BEGIN
+                IF flag THEN
+                        SET constant_name = "NORMAL";
+                END IF;
+        END;
+        END IF;
+
+#Если в this по значению, а в prev по ссылке, то в prev.value = this.value
+        IF ((this_flag_value = TRUE) AND flag = TRUE) THEN
+        BEGIN
+                SELECT data.value INTO val 	FROM data
+                                                                        WHERE 	data.strafe=i_strafe AND
+                                                                                data.plint = i_plint AND
+                                                                                data.pair = i_pair;
+#Проверка ветки prev на наличие flag_value = true
+                call check_crossing(i_prev_strafe,i_prev_plint,i_prev_pair,constant_name);
+                IF constant_name = "NORMAL" THEN
+                BEGIN
+#Обновление кроссировки
+                call update_crossing(i_prev_strafe,i_prev_plint,i_prev_pair,val);
+                UPDATE data SET data.prev_strafe=i_strafe,
+                                                data.prev_plint = i_plint,
+                                                data.prev_pair = i_pair,
+                                                data.value = val
+                                        WHERE 	data.strafe=i_prev_strafe AND
+                                                        data.plint = i_prev_plint AND
+                                                        data.pair = i_prev_pair;
+        END;
+        ELSE
+        BEGIN
+                        SET flag = FALSE;
+                END;
+        END IF;
+    END;
+        END IF;
+
+#Если везде по ссылке, то ищем ветку где есть по значению
+        IF (((this_flag_value = TRUE) OR
+                (prev_flag_value = FALSE AND this_flag_value = FALSE)) AND
+                flag = TRUE) THEN
+        BEGIN
+                SELECT data.value INTO val 	FROM data
+                                                                        WHERE 	data.strafe=i_strafe AND
+                                                                                data.plint = i_plint AND
+                                                                                data.pair = i_pair;
+#Проверка ветки prev и this на наличие flag_value = true
+                call check_crossing(i_prev_strafe,i_prev_plint,i_prev_pair,constant_name_prev);
+                call check_crossing(i_strafe,i_plint,i_pair,constant_name);
+#Если в ветке prev flag_value=false
+                IF (constant_name_prev = "NORMAL") THEN
+                BEGIN
+#Обновление кроссировки
+                        call update_crossing(i_prev_strafe,i_prev_plint,i_prev_pair,val);
+                UPDATE data SET data.prev_strafe=i_strafe,
+                                                        data.prev_plint = i_plint,
+                                                data.prev_pair = i_pair,
+                                                        data.value = val
+                                        WHERE 	data.strafe=i_prev_strafe AND
+                                                        data.plint = i_prev_plint AND
+                                                        data.pair = i_prev_pair;
+        END;
+        ELSE
+#Если в ветке prev flag_value=true, а в this flag_value=false
+        IF (constant_name_prev = "ERROR_CROSSING" AND constant_name = "NORMAL") THEN
+        BEGIN
+                call update_crossing(i_strafe,i_plint,i_pair,val);
+                UPDATE data SET data.prev_strafe=i_strafe,
+                                                data.prev_plint = i_plint,
+                                                data.prev_pair = i_pair
+                                        WHERE 	data.strafe=i_prev_strafe AND
+                                                        data.plint = i_prev_plint AND
+                                                        data.pair = i_prev_pair;
+                UPDATE data SET data.value = val
+                                        WHERE 	data.strafe=i_strafe AND
+                                                        data.plint = i_plint AND
+                                                        data.pair = i_pair;
+        END;
+        ELSE
+        BEGIN
+                        SET flag = FALSE;
+                END;
+                END IF;
+                END IF;
+    END;
+        END IF;
+
+
+#Если в prev по значению, а в this по ссылке, то в this.value = prev.value
+        IF ((prev_flag_value = TRUE) AND flag = TRUE) THEN
+        BEGIN
+                SELECT data.value INTO val 	FROM data
+                                                                        WHERE 	data.strafe=i_prev_strafe AND
+                                                                                data.plint = i_prev_plint AND
+                                                                                data.pair = i_prev_pair;
+
+#Проверка ветки this на наличие flag_value = true
+                call check_crossing(i_strafe,i_plint,i_pair,constant_name);
+                IF constant_name = "NORMAL" THEN
+                BEGIN
+#Обновление кроссировки
+                call update_crossing(i_strafe,i_plint,i_pair,val);
+                UPDATE data SET data.prev_strafe=i_strafe,
+                                                data.prev_plint = i_plint,
+                                                data.prev_pair = i_pair
+                                        WHERE 	data.strafe=i_prev_strafe AND
+                                                        data.plint = i_prev_plint AND
+                                                        data.pair = i_prev_pair;
+                UPDATE data SET data.value = val
+                                        WHERE 	data.strafe=i_strafe AND
+                                                        data.plint = i_plint AND
+                                                        data.pair = i_pair;
+        END;
+        ELSE
+        BEGIN
+                        SET flag = FALSE;
+                END;
+        END IF;
+    END;
+        END IF;
+
+        IF flag = FALSE THEN
+        BEGIN
+                SELECT constant_name;
+        END;
+        END IF;
+END //
+DELIMITER ;
