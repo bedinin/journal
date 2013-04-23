@@ -11,7 +11,7 @@ private:
     int plintCount,
             pairCount;
 public:
-    EListPair();
+    EListPair(); // Ещё что то
     void addPair(EPair);
     EPair getPair(int index);
 //    EPair getPair(QString name);
