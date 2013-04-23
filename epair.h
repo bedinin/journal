@@ -16,7 +16,7 @@ private:
             group_id,
             comment;
 public:
-    EPair();
+    EPair(); //что то
     QString getID();
     QString getStrafe();
     QString getPlint();
